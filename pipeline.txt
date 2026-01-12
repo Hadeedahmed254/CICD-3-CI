@@ -1,0 +1,148 @@
+pipeline {
+    agent any
+    tools{
+        jdk 'jdkv'
+        maven 'mavenv'
+    }
+    
+    environment {
+        scanner = tool 'sonar'
+    }
+
+    stages {
+        stage('Git checkout') {
+            steps {
+                git branch: 'main', changelog: false, credentialsId: 'git-cred', poll: false, url: 'https://github.com/Hadeedahmed254/CICD-with-Db'
+            }
+        }
+        
+        stage('Check the code is Syntaxically coorrect') {
+            steps {
+                sh "mvn compile"
+            }
+        }
+        
+        stage('check the code is logically correct') {
+            steps {
+                sh  "mvn test"
+            }
+        }
+        
+        stage('scan to check vulnerablities in dependencies') {
+            steps {
+                sh "trivy fs --format table -o trivy-fs-index.html ."
+            }
+        }
+        
+        stage('sonarqube scanner analysis') {
+            steps {
+                withSonarQubeEnv('sonarqube') {
+                        sh ''' $scanner/bin/sonar-scanner -Dsonar.projectName==multitierapp -Dsonar.projectKey=multitierap \
+                        -Dsonar.java.binaries=. '''
+                }
+            }
+        }
+        
+        stage('Peform quality gate by Sonar Server') {
+            steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsId: 'sonnar-cred'
+                }
+            }
+        }
+        
+        stage('build the soruce code and resources into .jar') {
+            steps {
+                sh "mvn package"
+            }
+        }
+        
+        stage('publish artifacts to nexus') {
+            steps {
+                withMaven(globalMavenSettingsConfig: 'nexus-id', jdk: 'jdkv', maven: 'mavenv', traceability: true) {
+                            sh "mvn deploy"
+                }
+            }
+        }
+        
+        stage('build and tag docker image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred') {
+                        sh "docker build -t hadeedahmed254/bankapp:latest ."
+                    }
+                }
+            }
+        }
+        
+        
+        
+        stage('scan docker image') {
+            steps {
+                sh "trivy image --format table -o trivy-image-index.html hadeedahmed254/bankapp:latest"
+            }
+        }
+        
+        stage('Push docker image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred') {
+                        sh "docker push hadeedahmed254/bankapp:latest"
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to k8s') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'cicd-cluster', contextName: '', credentialsId: 'k8s-id', namespace: 'bankapp', restrictKubeConfigAccess: false, serverUrl: 'https://5C21BAA73860E608356F8B6464F58C53.gr7.us-east-1.eks.amazonaws.com') {
+                    sh "kubectl apply -f deployment.yaml"
+                }
+            }
+        }
+        
+        stage('Verify the Deployment to k8s') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'cicd-cluster', contextName: '', credentialsId: 'k8s-id', namespace: 'bankapp', restrictKubeConfigAccess: false, serverUrl: 'https://5C21BAA73860E608356F8B6464F58C53.gr7.us-east-1.eks.amazonaws.com') {
+                    sh "kubectl get pods -n hadeed"
+                    sh "kubectl get svc -n hadeed"
+                }
+            }
+        }
+    }
+    post {
+    always {
+        script {
+            def jobName = env.JOB_NAME
+            def buildNumber = env.BUILD_NUMBER
+            def pipelineStatus = currentBuild.result ?: 'UNKNOWN'
+            def bannerColor = pipelineStatus.toUpperCase() == 'SUCCESS' ? 'green' : 'red'
+
+            def body = """
+                <html>
+                <body>
+                <div style="border: 4px solid ${bannerColor}; padding: 10px;">
+                <h2>${jobName} - Build ${buildNumber}</h2>
+                <div style="background-color: ${bannerColor}; padding: 10px;">
+                <h3 style="color: white;">Pipeline Status: ${pipelineStatus.toUpperCase()}</h3>
+                </div>
+                <p>Check the <a href="${BUILD_URL}">console output</a>.</p>
+                </div>
+                </body>
+                </html>
+            """
+
+            emailext (
+                subject: "${jobName} - Build ${buildNumber} - ${pipelineStatus.toUpperCase()}",
+                body: body,
+                to: 'hadeeda5@gmail.com',
+                from: 'jenkins@example.com',
+                replyTo: 'jenkins@example.com',
+                mimeType: 'text/html',
+                attachmentsPattern: 'trivy-image-index.html'
+            )
+        }
+    }
+    
+}    
+}
