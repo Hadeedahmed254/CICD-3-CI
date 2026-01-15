@@ -1,0 +1,75 @@
+#####CHECKING####
+kubectl get pods -n kube-system | grep ebs
+
+kubectl get sa ebs-csi-controller-sa -n kube-system
+
+aws 
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+TERRAFORM
+Terrform 
+# Update packages and install prerequisites
+sudo apt update && sudo apt install -y gnupg software-properties-common curl
+
+# Add HashiCorp GPG key
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+# Add HashiCorp repository
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+# Update and install Terraform
+sudo apt update
+sudo apt install -y terraform
+
+KUBECTL
+# Update packages and install dependencies
+sudo apt update
+sudo apt install -y ca-certificates curl
+
+# Add Kubernetes signing key
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+# Add the Kubernetes repo
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Install kubectl
+sudo apt update
+sudo apt install -y kubectl
+
+
+EKSCTL
+# Download the latest eksctl binary
+curl -sL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz
+
+# Move it to a directory in your PATH
+sudo mv eksctl /usr/local/bin/
+
+
+HELM
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+
+IAM OIDC provider
+
+eksctl utils associate-iam-oidc-provider \
+  --cluster cicd-cluster \
+  --region us-east-1 \
+  --approve
+
+
+
+OPTIONAL COMMAND
+#eksctl utils associate-iam-oidc-provider --region us-east-1 --cluster cicd-cluster --approve
+#eksctl create iamserviceaccount \
+  --region us-east-1 \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster cicd-cluster \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve \
+  --override-existing-serviceaccounts

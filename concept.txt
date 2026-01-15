@@ -1,0 +1,48 @@
+#######ISRA CONCEPT####
+Create cluster & node roles. Node role does NOT have EBS policy.
+
+Create OIDC provider for your cluster (trust AWS to accept JWT tokens).
+
+Deploy EBS CSI driver addon → automatically creates a service account in the kube-system namespace.
+
+Create IAM role (ebs_csi_role) with:
+
+AssumeRoleWithWebIdentity policy → allows only that service account (via JWT token from OIDC) to assume it.
+
+Attach AmazonEBSCSIDriverPolicy to the role.
+
+Pass the IAM role ARN to the addon (service_account_role_arn) → now CSI driver pods use that role via IRSA, no node-level overprivilege.
+
+########MANUALWAY###
+eksctl utils associate-iam-oidc-provider --region ap-east-1 --cluster cicd-cluster --approve
+It registers the cluster’s OIDC provider in AWS IAM.
+
+This makes AWS trust the JWT tokens issued by the Kubernetes service accounts.
+
+Why it’s mandatory for IRSA:
+
+IRSA (IAM Roles for Service Accounts) works by pods using a service account token to assume an IAM role.
+
+AWS needs to know and trust the OIDC provider that issued the token.
+
+Without registering the OIDC provider, AWS would reject the token → IRSA would fail.
+
+
+#######HTTP to https####
+To convert a website from HTTP to HTTPS in Kubernetes:
+
+I create a ClusterIssuer to tell cert-manager how to talk to Let’s Encrypt.
+
+Then I create an Ingress with TLS + annotation.
+
+That Ingress triggers cert-manager to get a real SSL certificate.
+
+cert-manager talks to Let’s Encrypt, proves ownership, gets the certificate.
+
+Nginx uses that certificate and my site becomes HTTPS.
+
+ClusterIssuer  → “How to get certs”
+Ingress        → “Expose app + I want HTTPS”
+cert-manager   → “Robot that gets cert”
+Secret         → “Stores cert”
+Nginx Ingress  → “Uses cert and routes traffic”
