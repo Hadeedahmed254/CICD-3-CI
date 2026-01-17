@@ -1,0 +1,106 @@
+### ISRA CONCEPT
+Create cluster & node roles. Node role does NOT have EBS policy.
+
+Create OIDC provider for your cluster (trust AWS to accept JWT tokens).
+
+Deploy EBS CSI driver addon → automatically creates a service account in the kube-system namespace.
+
+Create IAM role (ebs_csi_role) with:
+
+AssumeRoleWithWebIdentity policy → allows only that service account (via JWT token from OIDC) to assume it.
+
+Attach AmazonEBSCSIDriverPolicy to the role.
+
+Pass the IAM role ARN to the addon (service_account_role_arn) → now CSI driver pods use that role via IRSA, no node-level overprivilege.
+
+## MANUALWAY
+eksctl utils associate-iam-oidc-provider --region ap-east-1 --cluster cicd-cluster --approve
+It registers the cluster’s OIDC provider in AWS IAM.
+
+This makes AWS trust the JWT tokens issued by the Kubernetes service accounts.
+
+Why it’s mandatory for IRSA:
+
+IRSA (IAM Roles for Service Accounts) works by pods using a service account token to assume an IAM role.
+
+AWS needs to know and trust the OIDC provider that issued the token.
+
+Without registering the OIDC provider, AWS would reject the token → IRSA would fail.
+
+
+### HTTP to https
+Full Flow Summary: NGINX Ingress + TLS + Let’s Encrypt
+
+Your App & Services
+
+You have your application (bankapp) and database (mysql) running as ClusterIP services inside your Kubernetes cluster.
+
+These services are internal, meaning they are not publicly accessible directly.
+
+Install NGINX Ingress Controller
+
+Deploy NGINX Ingress Controller in a separate namespace (e.g., ingress-nginx).
+
+AWS automatically provisions a LoadBalancer (ELB) for this service.
+
+This ELB gets a public URL or IP, which will be the entry point to your cluster.
+
+Create Ingress Resource
+
+The Ingress resource defines:
+
+Host: e.g., mybankapp.com
+→ NGINX only routes traffic if the request’s Host header matches.
+
+Paths: e.g., / → backend service (bankapp-service).
+
+TLS secret: e.g., bankapp-tls → where the certificate will be stored.
+
+If no TLS is applied, traffic can go through HTTP; HTTPS requires a certificate.
+
+Use ClusterIssuer + Cert-Manager
+
+ClusterIssuer is configured to get certificates from Let’s Encrypt.
+
+You define Certificate resource for your host and secret.
+
+Cert-Manager coordinates with Let’s Encrypt to obtain the certificate automatically.
+
+HTTP-01 Challenge
+
+Let’s Encrypt sends a token to verify domain ownership.
+
+Cert-Manager temporarily creates a challenge pod and exposes it at:
+
+http://mybankapp.com/.well-known/acme-challenge/<token>
+
+
+The DNS for the host must point to the ELB so Let’s Encrypt can reach the challenge pod.
+
+If the token matches → domain verified → certificate is issued.
+
+Certificate Issued
+
+Cert-Manager stores the TLS certificate in the Kubernetes secret (e.g., bankapp-tls).
+
+NGINX Ingress uses this secret to serve HTTPS traffic to your host.
+
+DNS / CNAME
+
+Your public domain (e.g., mybankapp.com) is pointed to the ELB URL using a CNAME record.
+
+Now users accessing https://mybankapp.com hit the ELB → NGINX → bankapp service.
+
+Host header ensures traffic only goes to the correct backend.
+
+✅ Key Points
+
+Host in Ingress: Ensures traffic is routed only for that domain.
+
+TLS: Requires a certificate from Let’s Encrypt via Cert-Manager.
+
+HTTP-01 Challenge: Cert-Manager creates a temporary pod + path to prove domain ownership.
+
+DNS points to ELB: Let’s Encrypt can validate the domain.
+
+Secret (bankapp-tls): Stores the certificate, which NGINX uses for HTTPS.

@@ -6,13 +6,15 @@ pipeline {
     }
     
     environment {
-        scanner = tool 'sonar'
+        scanner = tool 'sonarqube'
+        IMAGE_TAG = "v${BUILD_NUMBER}"
+
     }
 
     stages {
         stage('Git checkout') {
             steps {
-                git branch: 'main', changelog: false, credentialsId: 'git-cred', poll: false, url: 'https://github.com/Hadeedahmed254/CICD-with-Db'
+                git branch: 'main', changelog: false, credentialsId: 'git-cred', poll: false, url: 'https://github.com/Hadeedahmed254/CICD-3-CI'
             }
         }
         
@@ -36,7 +38,7 @@ pipeline {
         
         stage('sonarqube scanner analysis') {
             steps {
-                withSonarQubeEnv('sonarqube') {
+                withSonarQubeEnv('sonar') {
                         sh ''' $scanner/bin/sonar-scanner -Dsonar.projectName==multitierapp -Dsonar.projectKey=multitierap \
                         -Dsonar.java.binaries=. '''
                 }
@@ -69,7 +71,7 @@ pipeline {
             steps {
                 script {
                     withDockerRegistry(credentialsId: 'docker-cred') {
-                        sh "docker build -t hadeedahmed254/bankapp:latest ."
+                        sh "docker build -t hadeedahmed254/cicd:${IMAGE_TAG} ."
                     }
                 }
             }
@@ -79,7 +81,7 @@ pipeline {
         
         stage('scan docker image') {
             steps {
-                sh "trivy image --format table -o trivy-image-index.html hadeedahmed254/bankapp:latest"
+                sh "trivy image --format table -o trivy-image-index.html hadeedahmed254/cicd:${IMAGE_TAG}"
             }
         }
         
@@ -87,36 +89,49 @@ pipeline {
             steps {
                 script {
                     withDockerRegistry(credentialsId: 'docker-cred') {
-                        sh "docker push hadeedahmed254/bankapp:latest"
+                        sh "docker push hadeedahmed254/cicd:${IMAGE_TAG}"
                     }
                 }
             }
         }
-        
-        stage('Deploy to k8s') {
+        stage('Update menifest in CD repo') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: 'cicd-cluster', contextName: '', credentialsId: 'k8s-id', namespace: 'bankapp', restrictKubeConfigAccess: false, serverUrl: 'https://5C21BAA73860E608356F8B6464F58C53.gr7.us-east-1.eks.amazonaws.com') {
-                    sh "kubectl apply -f deployment.yaml"
+                script {
+            // Clean workspace before starting
+            cleanWs()
+
+            withCredentials([usernamePassword(credentialsId: 'git-cred', usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                sh ''' # Clone the Mega-Project-CD repository
+                git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/Hadeedahmed254/CICD-3-CD
+
+                # Update the image tag in the manifest.yaml file
+                cd CICD-3-CD
+                sed -i "s|hadeedahmed254/cicd:.*|hadeedahmed254/cicd:${IMAGE_TAG}|" menifest.yaml
+
+                # Confirm changes
+                echo "Updated manifest file contents:"
+                cat menifest.yaml
+
+                # Commit and push the changes
+                git config user.name "Jenkins"
+                git config user.email "jenkins@example.com"
+                git add menifest.yaml
+                git commit -m "Update image tag to ${IMAGE_TAG}"
+                git push origin main
+                '''
+                        }
+                    }
                 }
             }
+
         }
-        
-        stage('Verify the Deployment to k8s') {
-            steps {
-                withKubeConfig(caCertificate: '', clusterName: 'cicd-cluster', contextName: '', credentialsId: 'k8s-id', namespace: 'bankapp', restrictKubeConfigAccess: false, serverUrl: 'https://5C21BAA73860E608356F8B6464F58C53.gr7.us-east-1.eks.amazonaws.com') {
-                    sh "kubectl get pods -n hadeed"
-                    sh "kubectl get svc -n hadeed"
-                }
-            }
-        }
-    }
     post {
     always {
         script {
             def jobName = env.JOB_NAME
             def buildNumber = env.BUILD_NUMBER
             def pipelineStatus = currentBuild.result ?: 'UNKNOWN'
-            def bannerColor = pipelineStatus.toUpperCase() == 'SUCCESS' ? 'green' : 'red'
+            def bannerColor = pipelineStatus.toUpperCase() == 'CI pipeline succesfully deployed' ? 'green' : 'red'
 
             def body = """
                 <html>
@@ -144,5 +159,6 @@ pipeline {
         }
     }
     
-}    
+  }    
+
 }

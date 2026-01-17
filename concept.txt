@@ -29,20 +29,78 @@ Without registering the OIDC provider, AWS would reject the token → IRSA would
 
 
 #######HTTP to https####
-To convert a website from HTTP to HTTPS in Kubernetes:
+Full Flow Summary: NGINX Ingress + TLS + Let’s Encrypt
 
-I create a ClusterIssuer to tell cert-manager how to talk to Let’s Encrypt.
+Your App & Services
 
-Then I create an Ingress with TLS + annotation.
+You have your application (bankapp) and database (mysql) running as ClusterIP services inside your Kubernetes cluster.
 
-That Ingress triggers cert-manager to get a real SSL certificate.
+These services are internal, meaning they are not publicly accessible directly.
 
-cert-manager talks to Let’s Encrypt, proves ownership, gets the certificate.
+Install NGINX Ingress Controller
 
-Nginx uses that certificate and my site becomes HTTPS.
+Deploy NGINX Ingress Controller in a separate namespace (e.g., ingress-nginx).
 
-ClusterIssuer  → “How to get certs”
-Ingress        → “Expose app + I want HTTPS”
-cert-manager   → “Robot that gets cert”
-Secret         → “Stores cert”
-Nginx Ingress  → “Uses cert and routes traffic”
+AWS automatically provisions a LoadBalancer (ELB) for this service.
+
+This ELB gets a public URL or IP, which will be the entry point to your cluster.
+
+Create Ingress Resource
+
+The Ingress resource defines:
+
+Host: e.g., mybankapp.com
+→ NGINX only routes traffic if the request’s Host header matches.
+
+Paths: e.g., / → backend service (bankapp-service).
+
+TLS secret: e.g., bankapp-tls → where the certificate will be stored.
+
+If no TLS is applied, traffic can go through HTTP; HTTPS requires a certificate.
+
+Use ClusterIssuer + Cert-Manager
+
+ClusterIssuer is configured to get certificates from Let’s Encrypt.
+
+You define Certificate resource for your host and secret.
+
+Cert-Manager coordinates with Let’s Encrypt to obtain the certificate automatically.
+
+HTTP-01 Challenge
+
+Let’s Encrypt sends a token to verify domain ownership.
+
+Cert-Manager temporarily creates a challenge pod and exposes it at:
+
+http://mybankapp.com/.well-known/acme-challenge/<token>
+
+
+The DNS for the host must point to the ELB so Let’s Encrypt can reach the challenge pod.
+
+If the token matches → domain verified → certificate is issued.
+
+Certificate Issued
+
+Cert-Manager stores the TLS certificate in the Kubernetes secret (e.g., bankapp-tls).
+
+NGINX Ingress uses this secret to serve HTTPS traffic to your host.
+
+DNS / CNAME
+
+Your public domain (e.g., mybankapp.com) is pointed to the ELB URL using a CNAME record.
+
+Now users accessing https://mybankapp.com hit the ELB → NGINX → bankapp service.
+
+Host header ensures traffic only goes to the correct backend.
+
+✅ Key Points
+
+Host in Ingress: Ensures traffic is routed only for that domain.
+
+TLS: Requires a certificate from Let’s Encrypt via Cert-Manager.
+
+HTTP-01 Challenge: Cert-Manager creates a temporary pod + path to prove domain ownership.
+
+DNS points to ELB: Let’s Encrypt can validate the domain.
+
+Secret (bankapp-tls): Stores the certificate, which NGINX uses for HTTPS.
