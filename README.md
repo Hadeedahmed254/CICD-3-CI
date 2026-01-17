@@ -1,4 +1,4 @@
-### ISRA CONCEPT
+# ISRA CONCEPT
 Create cluster & node roles. Node role does NOT have EBS policy.
 
 Create OIDC provider for your cluster (trust AWS to accept JWT tokens).
@@ -13,7 +13,7 @@ Attach AmazonEBSCSIDriverPolicy to the role.
 
 Pass the IAM role ARN to the addon (service_account_role_arn) → now CSI driver pods use that role via IRSA, no node-level overprivilege.
 
-## MANUALWAY
+# MANUALWAY
 eksctl utils associate-iam-oidc-provider --region ap-east-1 --cluster cicd-cluster --approve
 It registers the cluster’s OIDC provider in AWS IAM.
 
@@ -28,7 +28,7 @@ AWS needs to know and trust the OIDC provider that issued the token.
 Without registering the OIDC provider, AWS would reject the token → IRSA would fail.
 
 
-### HTTP to https
+# HTTP to https
 Full Flow Summary: NGINX Ingress + TLS + Let’s Encrypt
 
 Your App & Services
